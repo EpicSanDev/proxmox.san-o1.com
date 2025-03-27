@@ -26,7 +26,7 @@ fi
 # Clone the repository
 echo "Cloning San-O1 deployment repository from GitHub..."
 git clone https://github.com/EpicSanDev/proxmox.san-o1.com.git
-cd proxmox.san-o1.com.git
+cd proxmox.san-o1.com
 
 # Install dependencies
 echo "Installing Python dependencies..."
