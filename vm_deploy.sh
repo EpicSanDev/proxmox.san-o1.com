@@ -114,13 +114,15 @@ get_next_vmid() {
     local base_id=$1
     local vmid=$base_id
 
-    echo "Finding next available VM ID starting from $base_id..."
+    # Print informational messages to standard error (stderr)
+    echo "Finding next available VM ID starting from $base_id..." >&2
     while vm_exists $vmid; do
-        echo "VM ID $vmid is taken, trying next..."
+        echo "VM ID $vmid is taken, trying next..." >&2
         vmid=$((vmid + 1))
     done
 
-    echo "Using VM ID $vmid"
+    echo "Using VM ID $vmid" >&2
+    # Only echo the final result (the VM ID) to standard output (stdout)
     echo $vmid
 }
 
