@@ -25,8 +25,8 @@ fi
 
 # Clone the repository
 echo "Cloning San-O1 deployment repository from GitHub..."
-git clone https://github.com/bastienjavaux/san-o1-proxmox-deployer.git
-cd san-o1-proxmox-deployer
+git clone https://github.com/EpicSanDev/proxmox.san-o1.com.git
+cd proxmox.san-o1.com.git
 
 # Install dependencies
 echo "Installing Python dependencies..."
@@ -39,7 +39,7 @@ else
     echo "Creating default config.yaml"
     cp config.yaml.example config.yaml
     echo "Please edit config.yaml with your Proxmox settings and re-run this script."
-    echo "Config file location: $TEMP_DIR/san-o1-proxmox-deployer/config.yaml"
+    echo "Config file location: $TEMP_DIR/proxmox.san-o1.com.git/config.yaml"
     exit 1
 fi
 
