@@ -28,9 +28,15 @@ echo "Cloning San-O1 deployment repository from GitHub..."
 git clone https://github.com/EpicSanDev/proxmox.san-o1.com.git
 cd proxmox.san-o1.com
 
+# Create and activate virtual environment
+echo "Creating Python virtual environment..."
+python3 -m venv venv
+echo "Activating virtual environment..."
+source venv/bin/activate
+
 # Install dependencies
 echo "Installing Python dependencies..."
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 
 # Check for config file
 if [ -f "config.yaml" ]; then
