@@ -95,7 +95,8 @@ vm_exists() {
     local vmid=$1
     local status_code
 
-    status_code=$(curl -s -k -w "%{http_code}" -o /dev/null \
+    # Make curl timeout after a reasonable period (e.g., 10 seconds)
+    status_code=$(curl --connect-timeout 10 -s -k -w "%{http_code}" -o /dev/null \
                  -b "$PVE_COOKIE" \
                  "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/status/current")
 
@@ -104,8 +105,10 @@ vm_exists() {
     elif [ "$status_code" -eq 404 ]; then
         return 1  # VM does not exist
     else
-        echo "Warning: Received unexpected status code $status_code when checking VM $vmid"
-        return 1 # Assume it doesn't exist or there's an issue
+        # Redirect this warning message to stderr
+        echo "Warning: vm_exists check for VM $vmid received unexpected HTTP status: $status_code" >&2
+        # Optionally add more details about the curl command or response here if needed for debugging
+        return 1 # Assume it doesn't exist or there's an issue, allows get_next_vmid to continue
     fi
 }
 
