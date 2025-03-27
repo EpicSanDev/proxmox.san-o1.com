@@ -7,7 +7,7 @@ Automated deployment and management of AI infrastructure on Proxmox VE with inte
 Run this command in your Proxmox console to start the deployment:
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/bastienjavaux/san-o1-proxmox-deployer/main/san-o1-deploy.sh)
+bash <(curl -s https://raw.githubusercontent.com/EpicSanDev/proxmox.san-o1.com/main/san-o1-deploy.sh)
 ```
 
 ## Overview
