@@ -119,25 +119,52 @@ create_lb_vm() {
     # Basic VM creation
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
          -X POST \
-         -d "vmid=$vmid&name=$name&cores=$cores&memory=$memory&net0=virtio,bridge=$BRIDGE&ostype=l26&ide2=$UBUNTU_ISO,media=cdrom&boot=order=ide2" \
+         -d "vmid=$vmid&name=$name&cores=$cores&memory=$memory&net0=bridge=$BRIDGE,model=virtio&ostype=l26" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu"
+    
+    # Set boot order
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "boot=order=scsi0;ide2" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    
+    # Add CD-ROM with ISO
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "ide2=$UBUNTU_ISO,media=cdrom" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     # Add disk
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X POST \
-         -d "vmid=$vmid&scsi0=$VM_STORAGE:${disk},format=raw" \
+         -X PUT \
+         -d "scsi0=$VM_STORAGE:$disk" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     # Add cloud-init drive for automated setup
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X POST \
-         -d "vmid=$vmid&ide0=$VM_STORAGE:cloudinit" \
+         -X PUT \
+         -d "ide0=$VM_STORAGE:cloudinit" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     # Configure cloud-init
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X POST \
-         -d "ciuser=root&cipassword=san-o1-password&searchdomain=$DOMAIN&ipconfig0=ip=$ip/24,gw=$GATEWAY" \
+         -X PUT \
+         -d "ciuser=root" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "cipassword=san-o1-password" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "searchdomain=$DOMAIN" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "ipconfig0=ip=$ip/24,gw=$GATEWAY" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     log_message "Load Balancer VM $name created successfully with ID $vmid"

@@ -18,15 +18,15 @@ PROXMOX_PASSWORD=${PROXMOX_PASSWORD:-"your-password"}
 
 # Network configuration
 BRIDGE=${BRIDGE:-"vmbr0"}
-IP_BASE=${IP_BASE:-"192.168.1"}
-DOMAIN=${DOMAIN:-"ai-cluster.local"}
-GATEWAY=${GATEWAY:-"192.168.1.1"}
+IP_BASE=${IP_BASE:-"192.168.0.1"}
+DOMAIN=${DOMAIN:-"pve.home"}
+GATEWAY=${GATEWAY:-"192.168.0.1"}
 NETMASK=${NETMASK:-"255.255.255.0"}
 
 # Storage configuration
-VM_STORAGE=${VM_STORAGE:-"local-lvm"}
+VM_STORAGE=${VM_STORAGE:-"HDD"}
 ISO_STORAGE=${ISO_STORAGE:-"local"}
-UBUNTU_ISO=${UBUNTU_ISO:-"local:iso/ubuntu-22.04-live-server-amd64.iso"}
+UBUNTU_ISO=${UBUNTU_ISO:-"local:iso/ubuntu-24.04.2-live-server-amd64.iso"}
 
 # VM base IDs 
 VM_ID_BASE=${VM_ID_BASE:-1000}
@@ -125,25 +125,52 @@ create_vm() {
     # Basic VM creation
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
          -X POST \
-         -d "vmid=$vmid&name=$name&cores=$cores&memory=$memory&net0=virtio,bridge=$BRIDGE&ostype=l26&ide2=$UBUNTU_ISO,media=cdrom&boot=order=ide2" \
+         -d "vmid=$vmid&name=$name&cores=$cores&memory=$memory&net0=bridge=$BRIDGE,model=virtio&ostype=l26" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu"
+    
+    # Set boot order
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "boot=order=scsi0;ide2" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    
+    # Add CD-ROM with ISO
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "ide2=$UBUNTU_ISO,media=cdrom" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     # Add disk
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X POST \
-         -d "vmid=$vmid&scsi0=$VM_STORAGE:${disk},format=raw" \
+         -X PUT \
+         -d "scsi0=$VM_STORAGE:$disk" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     # Add cloud-init drive for automated setup
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X POST \
-         -d "vmid=$vmid&ide0=$VM_STORAGE:cloudinit" \
+         -X PUT \
+         -d "ide0=$VM_STORAGE:cloudinit" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     # Configure cloud-init
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X POST \
-         -d "ciuser=root&cipassword=san-o1-password&searchdomain=$DOMAIN&ipconfig0=ip=$ip/24,gw=$GATEWAY" \
+         -X PUT \
+         -d "ciuser=root" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "cipassword=san-o1-password" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "searchdomain=$DOMAIN" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    
+    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X PUT \
+         -d "ipconfig0=ip=$ip/24,gw=$GATEWAY" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     # Configure GPU passthrough if needed
@@ -161,11 +188,30 @@ create_vm() {
             gpu_id=$(echo "$gpu_ids" | head -1)
             
             # Enable IOMMU if not already enabled
-            if ! grep -q "intel_iommu=on" /etc/kernel/cmdline; then
-                echo "Enabling IOMMU (requires reboot)"
-                echo "intel_iommu=on iommu=pt" >> /etc/kernel/cmdline
-                update-initramfs -u -k all
-                # Note: Would need a reboot here in real implementation
+            # Check different locations for kernel parameters depending on Proxmox version
+            GRUB_CONFIG="/etc/default/grub"
+            if [ -f "$GRUB_CONFIG" ]; then
+                echo "Checking GRUB configuration for IOMMU settings"
+                if ! grep -q "intel_iommu=on" "$GRUB_CONFIG"; then
+                    echo "Enabling IOMMU in GRUB (requires reboot after script)"
+                    # Backup original config
+                    cp "$GRUB_CONFIG" "${GRUB_CONFIG}.bak"
+                    
+                    # Add IOMMU parameters to GRUB
+                    sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="intel_iommu=on iommu=pt /' "$GRUB_CONFIG"
+                    
+                    # Update GRUB
+                    update-grub
+                    
+                    # Update initramfs
+                    update-initramfs -u -k all
+                    echo "IOMMU enabled. You will need to reboot the host system!"
+                else
+                    echo "IOMMU is already enabled in GRUB configuration"
+                fi
+            else
+                echo "GRUB configuration file not found at $GRUB_CONFIG"
+                echo "Please manually enable IOMMU for your system"
             fi
             
             # Add PCI passthrough to VM config
