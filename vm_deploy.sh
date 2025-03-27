@@ -18,7 +18,7 @@ PROXMOX_PASSWORD=${PROXMOX_PASSWORD:-"your-password"}
 
 # Network configuration
 BRIDGE=${BRIDGE:-"vmbr0"}
-IP_BASE=${IP_BASE:-"192.168.0.1"}
+IP_BASE=${IP_BASE:-"192.168.1"}
 DOMAIN=${DOMAIN:-"pve.home"}
 GATEWAY=${GATEWAY:-"192.168.0.1"}
 NETMASK=${NETMASK:-"255.255.255.0"}
@@ -122,52 +122,52 @@ create_vm() {
     
     echo "Creating VM: $name (ID: $vmid)"
     
-    # Basic VM creation
+    # Basic VM creation with all parameters upfront
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
          -X POST \
-         -d "vmid=$vmid&name=$name&cores=$cores&memory=$memory&net0=bridge=$BRIDGE,model=virtio&ostype=l26" \
+         -d "vmid=$vmid&name=$name&cores=$cores&memory=$memory&ostype=l26&net0=model=virtio,bridge=$BRIDGE" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu"
     
-    # Set boot order
+    # Wait a moment for VM to be created
+    sleep 2
+    
+    # Add disk
+    disk_response=$(curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+         -X POST \
+         -d "storage=$VM_STORAGE&size=${disk}G&format=raw&vmid=$vmid" \
+         "$PROXMOX_API_URL/nodes/$NODE/storage/$VM_STORAGE/content")
+    
+    echo "Disk creation response: $disk_response"
+    
+    # Wait for disk to be created
+    sleep 2
+    
+    # Configure boot order
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
          -X PUT \
-         -d "boot=order=scsi0;ide2" \
+         -d "boot=c" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
     # Add CD-ROM with ISO
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X PUT \
-         -d "ide2=$UBUNTU_ISO,media=cdrom" \
-         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+         -X POST \
+         -d "idlist=ide2&vmid=$vmid" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/hardware"
     
-    # Add disk
-    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X PUT \
-         -d "scsi0=$VM_STORAGE:$disk" \
-         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
-    
-    # Add cloud-init drive for automated setup
-    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X PUT \
-         -d "ide0=$VM_STORAGE:cloudinit" \
-         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
-    
-    # Configure cloud-init
-    curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
-         -X PUT \
-         -d "ciuser=root" \
-         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+    sleep 1
     
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
          -X PUT \
-         -d "cipassword=san-o1-password" \
-         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+         -d "media=cdrom&file=$UBUNTU_ISO" \
+         "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config/ide2"
     
+    # Configure cloud-init options
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
          -X PUT \
-         -d "searchdomain=$DOMAIN" \
+         -d "ciuser=root&cipassword=san-o1-password&nameserver=8.8.8.8&searchdomain=$DOMAIN" \
          "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
     
+    # Configure IP
     curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
          -X PUT \
          -d "ipconfig0=ip=$ip/24,gw=$GATEWAY" \
@@ -214,11 +214,18 @@ create_vm() {
                 echo "Please manually enable IOMMU for your system"
             fi
             
-            # Add PCI passthrough to VM config
+            # Add PCI passthrough to VM config 
             curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
                  -X POST \
-                 -d "hostpci0=$gpu_id,pcie=1" \
-                 "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config"
+                 -d "idlist=hostpci0&vmid=$vmid" \
+                 "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/hardware"
+            
+            sleep 1
+                
+            curl -s -k -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF_TOKEN" \
+                 -X PUT \
+                 -d "host=$gpu_id" \
+                 "$PROXMOX_API_URL/nodes/$NODE/qemu/$vmid/config/hostpci0"
         else
             echo "WARNING: No GPU found for passthrough"
         fi
