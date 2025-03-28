@@ -1,0 +1,79 @@
+2025-03-28 14:59:51,975 - ProxmoxLoadBalancer - INFO - Configuration saved to load_balancer_config.json
+2025-03-28 15:01:55,374 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:01:55,375 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:01:55,375 - ProxmoxLoadBalancer - INFO - Load balancer started
+2025-03-28 15:01:55,544 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:01:55,689 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:06:57,048 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:06:57,245 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:06:57,398 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:11:59,090 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:11:59,305 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:11:59,493 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:14:29,163 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:14:29,163 - ProxmoxLoadBalancer - INFO - Checking Proxmox configuration for load balancing
+2025-03-28 15:14:29,260 - ProxmoxLoadBalancer - INFO - Current Proxmox configuration status: {'cluster': True, 'ha': True, 'ceph': True, 'replication': True}
+2025-03-28 15:14:29,260 - ProxmoxLoadBalancer - INFO - Proxmox is already properly configured for load balancing
+2025-03-28 15:14:29,261 - ProxmoxLoadBalancer - INFO - Configuration saved to load_balancer_config.json
+2025-03-28 15:15:23,446 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:15:35,256 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:16:18,942 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:16:28,910 - ProxmoxLoadBalancer - INFO - Checking Proxmox configuration for load balancing
+2025-03-28 15:16:28,998 - ProxmoxLoadBalancer - INFO - Current Proxmox configuration status: {'cluster': True, 'ha': True, 'ceph': True, 'replication': True}
+2025-03-28 15:16:28,998 - ProxmoxLoadBalancer - INFO - Proxmox is already properly configured for load balancing
+2025-03-28 15:16:28,999 - ProxmoxLoadBalancer - INFO - Configuration saved to load_balancer_config.json
+2025-03-28 15:17:39,212 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:17:39,493 - ProxmoxLoadBalancer - INFO - Identified critical VMs: [1000, 100]
+2025-03-28 15:17:39,494 - ProxmoxLoadBalancer - INFO - Configuration saved to load_balancer_config.json
+2025-03-28 15:18:08,076 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:18:08,077 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:18:08,077 - ProxmoxLoadBalancer - INFO - Load balancer started
+2025-03-28 15:18:08,238 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:18:08,388 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:23:09,578 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:23:09,770 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:23:09,944 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:28:11,346 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:28:11,560 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:28:11,743 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:33:13,098 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:33:13,299 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:33:13,463 - ProxmoxLoadBalancer - INFO - Underloaded nodes: []
+2025-03-28 15:36:30,253 - ProxmoxLoadBalancer - INFO - Load balancer stopped
+2025-03-28 15:36:34,362 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:36:34,362 - ProxmoxLoadBalancer - INFO - Load balancer started
+2025-03-28 15:36:34,853 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:36:35,058 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:36:35,232 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:36:35,232 - ProxmoxLoadBalancer - INFO - Executing high_to_low migration strategy
+2025-03-28 15:40:18,540 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:40:18,541 - ProxmoxLoadBalancer - INFO - Load balancer started
+2025-03-28 15:40:19,248 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:40:19,636 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:40:19,899 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:40:19,899 - ProxmoxLoadBalancer - INFO - Executing high_to_low migration strategy
+2025-03-28 15:42:57,577 - ProxmoxLoadBalancerAPI - INFO - Starting Proxmox Load Balancer API on 127.0.0.1:5000
+2025-03-28 15:42:57,578 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:42:59,235 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-03-28 15:42:59,235 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-03-28 15:43:01,562 - werkzeug - INFO - 127.0.0.1 - - [28/Mar/2025 15:43:01] "[33mGET / HTTP/1.1[0m" 404 -
+2025-03-28 15:43:01,833 - werkzeug - INFO - 127.0.0.1 - - [28/Mar/2025 15:43:01] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-03-28 15:43:50,777 - ProxmoxLoadBalancer - INFO - Loaded configuration from load_balancer_config.json
+2025-03-28 15:43:50,777 - ProxmoxLoadBalancer - INFO - Load balancer started
+2025-03-28 15:43:51,298 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:43:51,511 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:43:51,681 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:43:51,681 - ProxmoxLoadBalancer - INFO - Executing high_to_low migration strategy
+2025-03-28 15:48:54,042 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:48:54,460 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:48:54,669 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:48:54,669 - ProxmoxLoadBalancer - INFO - Executing high_to_low migration strategy
+2025-03-28 15:53:56,670 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:53:56,909 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:53:57,088 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:53:57,088 - ProxmoxLoadBalancer - INFO - Executing high_to_low migration strategy
+2025-03-28 15:59:28,938 - ProxmoxLoadBalancer - INFO - Starting cluster balance check
+2025-03-28 15:59:29,146 - ProxmoxLoadBalancer - INFO - Overloaded nodes: ['pve1']
+2025-03-28 15:59:29,317 - ProxmoxLoadBalancer - INFO - Underloaded nodes: ['pve2']
+2025-03-28 15:59:29,317 - ProxmoxLoadBalancer - INFO - Executing high_to_low migration strategy

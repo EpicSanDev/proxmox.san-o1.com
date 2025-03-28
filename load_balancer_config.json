@@ -1,0 +1,42 @@
+{
+  "check_interval": 300,
+  "high_load_threshold": 0.8,
+  "low_load_threshold": 0.2,
+  "min_balance_interval": 3600,
+  "max_parallel_migrations": 2,
+  "migrate_high_load": true,
+  "migrate_to_low_load": true,
+  "resource_weights": {
+    "cpu": 0.4,
+    "memory": 0.4,
+    "disk": 0.15,
+    "network": 0.05
+  },
+  "vm_exclusions": [],
+  "node_exclusions": [],
+  "consider_affinity": true,
+  "vm_groups": {},
+  "consider_time_of_day": true,
+  "off_hours": {
+    "start": 22,
+    "end": 6
+  },
+  "learning_enabled": true,
+  "ai_features": {
+    "prediction_enabled": true,
+    "vm_profiling": true,
+    "anomaly_detection": true
+  },
+  "auto_configure_proxmox": true,
+  "proxmox_config": {
+    "configure_ha": true,
+    "configure_migration": true,
+    "ha_group_name": "lb-ha-group",
+    "critical_vms": [
+      1000,
+      100
+    ],
+    "check_proxmox_config_interval": 86400
+  },
+  "last_proxmox_config_check": 1743171388.91069
+}

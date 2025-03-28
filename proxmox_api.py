@@ -1,717 +1,428 @@
 #!/usr/bin/env python3
-"""
-Proxmox API Module
-Provides interface to interact with the Proxmox Virtual Environment API.
-"""
-
-import time
 import requests
-import logging
-import paramiko
-import tempfile
-import os
-from pathlib import Path
+import json
+import time
 from urllib3.exceptions import InsecureRequestWarning
-from requests.packages.urllib3.exceptions import InsecureRequestWarning as RequestsInsecureWarning
 
-# Suppress insecure request warnings when verify_ssl is False
-requests.packages.urllib3.disable_warnings(RequestsInsecureWarning)
+# Suppress only the specific InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-logger = logging.getLogger('san-o1-deployer.proxmox_api')
-
 class ProxmoxAPI:
-    """Interface for Proxmox VE API operations."""
+    """Class to interact with the Proxmox API"""
     
-    def __init__(self, host, user, password, verify_ssl=False, port=8006):
-        """Initialize Proxmox API connection."""
-        # Check if host already contains port
-        if ':' in host:
-            self.host, port_str = host.split(':')
-            self.port = int(port_str)
-        else:
-            self.host = host
-            self.port = port
+    def __init__(self, host, user, password, realm='pam', verify_ssl=False, port=8006):
+        """
+        Initialize the Proxmox API connection
+        
+        Args:
+            host (str): Proxmox host IP or hostname
+            user (str): Username for authentication
+            password (str): Password for authentication
+            realm (str): Authentication realm (pam, pve, etc.)
+            verify_ssl (bool): Whether to verify SSL certificate
+            port (int): API port
+        """
+        self.host = host
         self.user = user
         self.password = password
+        self.realm = realm
         self.verify_ssl = verify_ssl
+        self.port = port
         self.api_url = f"https://{self.host}:{self.port}/api2/json"
         self.token = None
         self.csrf_token = None
+        self.token_expires = 0
         
-        # Authenticate on initialization
-        self.authenticate()
-    
-    def authenticate(self):
-        """Authenticate with Proxmox API."""
+    def login(self):
+        """Authenticate with Proxmox API and get tokens"""
         auth_url = f"{self.api_url}/access/ticket"
+        auth_data = {
+            "username": f"{self.user}@{self.realm}",
+            "password": self.password
+        }
+        
         try:
-            response = requests.post(
-                auth_url,
-                data={'username': self.user, 'password': self.password},
-                verify=self.verify_ssl
-            )
+            response = requests.post(auth_url, data=auth_data, verify=self.verify_ssl)
             response.raise_for_status()
             
-            data = response.json()['data']
-            self.token = data['ticket']
-            self.csrf_token = data['CSRFPreventionToken']
+            result = response.json()['data']
+            self.token = result['ticket']
+            self.csrf_token = result['CSRFPreventionToken']
+            # Set token expiration to 2 hours from now
+            self.token_expires = time.time() + 7200
             
-            logger.debug("Successfully authenticated with Proxmox API")
+            return True
         except Exception as e:
-            logger.error(f"Authentication failed: {str(e)}")
-            raise
+            print(f"Authentication failed: {str(e)}")
+            return False
     
-    def _headers(self):
-        """Get request headers with authentication."""
-        return {
-            'Cookie': f"PVEAuthCookie={self.token}",
-            'CSRFPreventionToken': self.csrf_token
-        }
+    def _ensure_authenticated(self):
+        """Ensure we have a valid authentication token"""
+        if not self.token or time.time() > self.token_expires:
+            return self.login()
+        return True
     
-    def get(self, path):
-        """Perform GET request to Proxmox API."""
-        url = f"{self.api_url}/{path}"
+    def get(self, endpoint, params=None):
+        """
+        Make a GET request to the Proxmox API
+        
+        Args:
+            endpoint (str): API endpoint (e.g., 'nodes')
+            params (dict, optional): Query parameters to include in the request
+            
+        Returns:
+            dict: API response data
+        """
+        if not self._ensure_authenticated():
+            return None
+        
+        # Split endpoint and parameters if they're in the endpoint string
+        if '?' in endpoint:
+            endpoint_parts = endpoint.split('?', 1)
+            endpoint = endpoint_parts[0]
+            
+            # Parse query parameters
+            query_params = {}
+            param_parts = endpoint_parts[1].split('&')
+            for part in param_parts:
+                if '=' in part:
+                    key, value = part.split('=', 1)
+                    query_params[key] = value
+                else:
+                    query_params[part] = '1'
+            
+            # Merge with any provided params
+            if params:
+                query_params.update(params)
+            params = query_params
+            
+        url = f"{self.api_url}/{endpoint}"
+        headers = {"Cookie": f"PVEAuthCookie={self.token}"}
+        
         try:
-            response = requests.get(url, headers=self._headers(), verify=self.verify_ssl)
+            response = requests.get(url, headers=headers, params=params, verify=self.verify_ssl)
             response.raise_for_status()
             return response.json()['data']
         except Exception as e:
-            logger.error(f"GET request failed for {path}: {str(e)}")
-            raise
+            print(f"GET request failed: {str(e)}")
+            return None
     
-    def post(self, path, data=None):
-        """Perform POST request to Proxmox API."""
-        url = f"{self.api_url}/{path}"
-        try:
-            # Log the request details for debugging
-            logger.debug(f"POST request to {url}")
-            logger.debug(f"POST data: {data}")
+    def post(self, endpoint, data=None):
+        """
+        Make a POST request to the Proxmox API
+        
+        Args:
+            endpoint (str): API endpoint
+            data (dict): Data to send in the request
             
-            response = requests.post(url, data=data, headers=self._headers(), verify=self.verify_ssl)
+        Returns:
+            dict: API response data
+        """
+        if not self._ensure_authenticated():
+            return None
             
-            # Log the response
-            logger.debug(f"Response status: {response.status_code}")
-            logger.debug(f"Response content: {response.text}")
+        url = f"{self.api_url}/{endpoint}"
+        headers = {
+            "Cookie": f"PVEAuthCookie={self.token}",
+            "CSRFPreventionToken": self.csrf_token
+        }
+        
+        try:
+            response = requests.post(url, data=data, headers=headers, verify=self.verify_ssl)
+            response.raise_for_status()
+            return response.json()['data']
+        except Exception as e:
+            print(f"POST request failed: {str(e)}")
+            return None
             
-            response.raise_for_status()
-            return response.json()['data'] if response.content else None
-        except requests.exceptions.HTTPError as e:
-            if response.status_code == 501 and "not implemented" in response.text.lower():
-                # Log as info for expected "not implemented" API endpoints
-                # This is especially relevant for nodes/{node}/lxc/{vmid}/exec
-                logger.info(f"API endpoint not implemented for {path}: {str(e)}")
-                raise
-            else:
-                # Log other HTTP errors as errors
-                logger.error(f"HTTP error in POST request for {path}: {str(e)}")
-                raise
-        except Exception as e:
-            logger.error(f"POST request failed for {path}: {str(e)}")
-            raise
-    
-    def put(self, path, data=None):
-        """Perform PUT request to Proxmox API."""
-        url = f"{self.api_url}/{path}"
-        try:
-            response = requests.put(url, data=data, headers=self._headers(), verify=self.verify_ssl)
-            response.raise_for_status()
-            return response.json()['data'] if response.content else None
-        except Exception as e:
-            logger.error(f"PUT request failed for {path}: {str(e)}")
-            raise
-    
-    def delete(self, path):
-        """Perform DELETE request to Proxmox API."""
-        url = f"{self.api_url}/{path}"
-        try:
-            response = requests.delete(url, headers=self._headers(), verify=self.verify_ssl)
-            response.raise_for_status()
-            return response.json()['data'] if response.content else None
-        except Exception as e:
-            logger.error(f"DELETE request failed for {path}: {str(e)}")
-            raise
-    
     def get_nodes(self):
-        """Get all Proxmox nodes."""
-        return self.get('nodes')
+        """Get list of all nodes in the cluster"""
+        return self.get("nodes")
     
     def get_node_status(self, node):
-        """Get status of a specific node."""
+        """Get status information for a specific node"""
         return self.get(f"nodes/{node}/status")
-    
-    def get_node_resources(self, node):
-        """Get resource usage of a specific node.
         
-        Attempts to use the resources endpoint, but falls back to basic information
-        if that endpoint is not implemented.
-        """
-        try:
-            return self.get(f"nodes/{node}/resources")
-        except Exception as e:
-            logger.warning(f"Resources endpoint not implemented for node {node}, using basic information only")
-            # Return basic information as fallback
-            try:
-                node_status = self.get_node_status(node)
-                # Create a simplified resource structure
-                return [{
-                    'node': node,
-                    'type': 'node',
-                    'status': node_status.get('status', 'unknown'),
-                    'cpu': node_status.get('cpu', 0),
-                    'maxcpu': node_status.get('maxcpu', 1),
-                    'mem': node_status.get('memory', {}).get('used', 0),
-                    'maxmem': node_status.get('memory', {}).get('total', 1),
-                }]
-            except Exception as fallback_error:
-                logger.error(f"Failed to get basic node information: {str(fallback_error)}")
-                # Return minimal information to prevent further errors
-                return [{'node': node, 'type': 'node', 'status': 'unknown'}]
-    
-    def get_qemu_vms(self, node):
-        """Get all QEMU VMs on a specific node."""
+    def get_node_vms(self, node):
+        """Get all VMs on a specific node"""
         return self.get(f"nodes/{node}/qemu")
-    
-    def get_lxc_containers(self, node):
-        """Get all LXC containers on a specific node."""
+        
+    def get_node_containers(self, node):
+        """Get all LXC containers on a specific node"""
         return self.get(f"nodes/{node}/lxc")
     
-    def create_lxc_container(self, node, data):
-        """Create a new LXC container."""
-        return self.post(f"nodes/{node}/lxc", data)
+    def get_vm_config(self, node, vmid):
+        """Get VM configuration"""
+        return self.get(f"nodes/{node}/qemu/{vmid}/config")
     
-    def start_lxc_container(self, node, vmid):
-        """Start an LXC container."""
-        return self.post(f"nodes/{node}/lxc/{vmid}/status/start")
+    def get_vm_status(self, node, vmid):
+        """Get VM status"""
+        return self.get(f"nodes/{node}/qemu/{vmid}/status/current")
     
-    def stop_lxc_container(self, node, vmid):
-        """Stop an LXC container."""
-        return self.post(f"nodes/{node}/lxc/{vmid}/status/stop")
-    
-    def get_storage(self, node):
-        """Get storage details for a node."""
-        return self.get(f"nodes/{node}/storage")
-    
-    def get_task_status(self, node, upid):
-        """Get the status of a task."""
-        # Extract the task ID parts from the UPID format: UPID:node:pid:pstart:starttime:type:id:user@realm:
-        if isinstance(upid, str) and upid.startswith('UPID:'):
-            # Using the full UPID as the task ID
-            parts = upid.split(':')
-            if len(parts) >= 2:
-                # Use the node from the UPID if available
-                node_from_upid = parts[1]
-                # If node is different from the one in UPID, log a warning
-                if node != node_from_upid:
-                    logger.warning(f"Node mismatch: given '{node}' but UPID contains '{node_from_upid}'. Using '{node_from_upid}'.")
-                    node = node_from_upid
-        
-        logger.debug(f"Getting task status for node: {node}, task: {upid}")
-        return self.get(f"nodes/{node}/tasks/{upid}/status")
-    
-    def wait_for_task(self, node, upid, timeout=300, interval=2):
-        """Wait for a task to complete."""
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > timeout:
-                raise TimeoutError(f"Task {upid} timed out after {timeout} seconds")
-            
-            status = self.get_task_status(node, upid)
-            if status.get('status') == 'stopped':
-                if status.get('exitstatus') == 'OK':
-                    return True
-                else:
-                    raise RuntimeError(f"Task failed: {status.get('exitcode')} - {status.get('logs')}") 
-            
-            time.sleep(interval)
-    
-    def get_node_hardware_info(self, node):
-        """Get hardware information for a node."""
-        return self.get(f"nodes/{node}/hardware")
-    
-    def get_node_gpu_info(self, node):
-        """Get GPU information for a node."""
-        try:
-            pci_devices = self.get(f"nodes/{node}/hardware/pci")
-            # Filter for NVIDIA, AMD or other GPU devices
-            gpu_devices = [dev for dev in pci_devices 
-                          if any(gpu_keyword in dev.get('device_name', '').lower() 
-                                for gpu_keyword in ['nvidia', 'amd', 'gpu', 'graphics'])]
-            return gpu_devices
-        except Exception as e:
-            logger.warning(f"Could not retrieve GPU info for node {node}: {str(e)}")
-            return []
-    
-    def execute_in_lxc(self, node, vmid, command):
-        """Execute a command inside an LXC container.
+    def migrate_vm(self, node, vmid, target_node, online=True, with_local_disks=True):
+        """
+        Migrate a VM to another node
         
         Args:
-            node (str): The node name where the container is running
-            vmid (int): The VMID of the container
-            command (str): The command to execute
+            node (str): Source node name
+            vmid (int): VM ID
+            target_node (str): Target node name
+            online (bool): Whether to migrate while VM is running
+            with_local_disks (bool): Whether to migrate local disks
             
         Returns:
-            dict: Response containing command output and exit status
+            dict: API response
         """
-        try:
-            # Try the preferred exec API endpoint
-            path = f"nodes/{node}/lxc/{vmid}/exec"
-            data = {
-                'command': command,
-                'wait': True  # Wait for command to complete and return output
-            }
-            response = self.post(path, data)
-            logger.debug(f"Executed command in container {vmid}: {command}")
-            return response
-        except Exception as e:
-            if "501 Server Error: Method" in str(e) and "not implemented" in str(e):
-                # This is expected for Proxmox versions that don't support the exec API
-                logger.info(f"LXC exec API not supported by this Proxmox version. Simulating success for container {vmid}.")
-                # Return a simulated success response to allow deployment to continue
-                return {
-                    'data': 'Command execution simulated (API not implemented)',
-                    'success': True
-                }
-            else:
-                # For other errors, log a warning but still continue with simulated success
-                logger.warning(f"Command execution failed for container {vmid}: {str(e)}")
-                return {
-                    'data': f'Command execution failed: {str(e)}',
-                    'success': True
-                }
-            
-    def write_file_to_lxc(self, node, vmid, filename, content):
-        """Write content to a file inside an LXC container.
+        data = {
+            "target": target_node,
+            "online": 1 if online else 0,
+            "with-local-disks": 1 if with_local_disks else 0
+        }
         
-        Args:
-            node (str): The node name where the container is running
-            vmid (int): The VMID of the container
-            filename (str): The target filename in the container
-            content (str): The content to write to the file
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            # First, create the file with the content
-            mkdir_cmd = f"mkdir -p $(dirname {filename})"
-            self.execute_in_lxc(node, vmid, mkdir_cmd)
-            
-            # Write content to the file, ensuring proper escaping of quotes and special characters
-            escaped_content = content.replace('"', '\\"')
-            write_cmd = f'cat > {filename} << \'EOFMARKER\'\n{content}\nEOFMARKER'
-            self.execute_in_lxc(node, vmid, write_cmd)
-            
-            logger.debug(f"Wrote content to file {filename} in container {vmid}")
-            return True
-        except Exception as e:
-            if "501 Server Error: Method" in str(e) and "not implemented" in str(e):
-                # This is expected for Proxmox versions that don't support the exec API
-                logger.info(f"LXC exec API not supported for writing files to container {vmid}. Simulating success.")
-                return True
-            else:
-                logger.warning(f"Failed to write to file {filename} in container {vmid}: {str(e)}")
-                # We'll simulate success to allow deployment to continue
-                return True
+        return self.post(f"nodes/{node}/qemu/{vmid}/migrate", data=data)
     
-    def github_deploy_script(self, node, vmid, script, repo_name="san-o1-deploy-script"):
-        """Deploy a script via GitHub to an LXC container.
-        
-        This method creates a GitHub repository, uploads the script,
-        and then clones the repository inside the container to execute the script.
+    def get_cluster_resources(self, resource_type=None):
+        """
+        Get cluster resources
         
         Args:
-            node (str): The node name where the container is running
-            vmid (int): The VMID of the container
-            script (str): The bash script content
-            repo_name (str): Name for the temporary GitHub repository
+            resource_type (str, optional): Filter by resource type (vm, storage, node)
             
         Returns:
-            bool: True if successful, False otherwise
+            list: Resources in the cluster
         """
-        import tempfile
-        import os
-        import uuid
-        import time
-        from pathlib import Path
-        import base64
-        try:
-            # Generate a unique ID for this script deployment
-            deploy_id = str(uuid.uuid4())[:8]
-            
-            # Create a temporary directory for the Git repo
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Create the script in the temp directory
-                script_filename = 'setup.sh'
-                script_path = Path(temp_dir) / script_filename
-                
-                with open(script_path, 'w') as f:
-                    f.write("#!/bin/bash\n")
-                    f.write(script)
-                
-                # Make the script executable
-                os.chmod(script_path, 0o755)
-                
-                # Get the container's IP address
-                container_ip = self.get_lxc_ip(node, vmid)
-                
-                # Prepare the container by installing git
-                try:
-                    # Try to execute this via regular API (might work for commands even if script exec doesn't)
-                    self.execute_in_lxc(node, vmid, "apt-get update && apt-get install -y git curl")
-                except:
-                    # If that fails, try SSH method
-                    ssh_user = 'root'
-                    credentials = []
-                    
-                    if '@' in self.user:
-                        ssh_user = self.user.split('@')[0]
-                    credentials.append((ssh_user, self.password))
-                    
-                    if ssh_user != 'root':
-                        credentials.append(('root', self.password))
-                    
-                    credentials.append(('root', 'root'))
-                    
-                    # Try different credential combinations for SSH
-                    for username, password in credentials:
-                        try:
-                            # Create SSH client
-                            ssh_client = paramiko.SSHClient()
-                            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                            ssh_client.connect(container_ip, username=username, password=password, timeout=10)
-                            
-                            # Install git
-                            stdin, stdout, stderr = ssh_client.exec_command("apt-get update && apt-get install -y git curl")
-                            exit_status = stdout.channel.recv_exit_status()
-                            ssh_client.close()
-                            
-                            if exit_status == 0:
-                                break
-                        except:
-                            pass
-                
-                # Create a GitHub gist with the script content
-                logger.info(f"Creating GitHub gist for container {vmid}")
-                
-                # Create a gist ID using timestamp and random ID
-                gist_id = f"deploy-{int(time.time())}-{deploy_id}"
-                
-                # Pre-process the script content for JSON embedding
-                # Replace double quotes with escaped double quotes
-                processed_script = script.replace('"', '\\"')
-                # Replace newlines with literal \n
-                processed_script = processed_script.replace('\n', '\\n')
-                
-                # Use curl to create the gist directly in the container
-                curl_cmd = f"""
-                curl -X POST -H "Content-Type: application/json" -d '{{
-                  "public": true,
-                  "files": {{
-                    "setup.sh": {{
-                      "content": "#!/bin/bash\\n{processed_script}"
-                    }}
-                  }}
-                }}' https://api.github.com/gists -o /tmp/gist_response.json && 
-                cat /tmp/gist_response.json | grep -o 'https://gist.github.com/[^"]*' | head -1 > /tmp/gist_url.txt &&
-                cat /tmp/gist_response.json | grep -o 'https://api.github.com/gists/[^"]*' | head -1 | cut -d'/' -f5 > /tmp/gist_id.txt
-                """
-                
-                try:
-                    # Try executing curl command via regular API
-                    self.execute_in_lxc(node, vmid, curl_cmd)
-                except:
-                    # If that fails, try SSH method
-                    try:
-                        ssh_client = paramiko.SSHClient()
-                        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                        
-                        # Try to connect using the last working credentials
-                        for username, password in credentials:
-                            try:
-                                ssh_client.connect(container_ip, username=username, password=password, timeout=10)
-                                stdin, stdout, stderr = ssh_client.exec_command(curl_cmd)
-                                exit_status = stdout.channel.recv_exit_status()
-                                ssh_client.close()
-                                break
-                            except:
-                                continue
-                    except:
-                        pass
-                
-                # Now fetch and run the script
-                fetch_and_run_cmd = """
-                mkdir -p /tmp/deploy && cd /tmp/deploy &&
-                GIST_ID=$(cat /tmp/gist_id.txt) &&
-                curl -L -o setup.sh https://gist.githubusercontent.com/raw/$GIST_ID/setup.sh &&
-                chmod +x setup.sh && 
-                ./setup.sh > /tmp/deploy_output.log 2>&1
-                """
-                
-                try:
-                    # Try executing the fetch and run command via regular API
-                    self.execute_in_lxc(node, vmid, fetch_and_run_cmd)
-                    logger.info(f"Script from GitHub gist executed in container {vmid}")
-                    return True
-                except:
-                    # If that fails, try SSH method
-                    try:
-                        ssh_client = paramiko.SSHClient()
-                        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                        
-                        # Try to connect using the last working credentials
-                        for username, password in credentials:
-                            try:
-                                ssh_client.connect(container_ip, username=username, password=password, timeout=10)
-                                stdin, stdout, stderr = ssh_client.exec_command(fetch_and_run_cmd)
-                                exit_status = stdout.channel.recv_exit_status()
-                                ssh_client.close()
-                                
-                                if exit_status == 0:
-                                    logger.info(f"Script from GitHub gist executed via SSH in container {vmid}")
-                                    return True
-                                break
-                            except:
-                                continue
-                        
-                        logger.warning(f"Failed to execute script via SSH from GitHub gist in container {vmid}")
-                        return False
-                    except Exception as ssh_error:
-                        logger.error(f"SSH execution of GitHub gist failed for container {vmid}: {str(ssh_error)}")
-                        return False
-            
-        except Exception as e:
-            logger.error(f"GitHub gist deployment failed for container {vmid}: {str(e)}")
-            return False
-
-    def execute_script_in_lxc(self, node, vmid, script, script_path='/tmp/setup_script.sh'):
-        """Execute a bash script inside an LXC container.
+        endpoint = "cluster/resources"
+        if resource_type:
+            endpoint += f"?type={resource_type}"
         
-        Args:
-            node (str): The node name where the container is running
-            vmid (int): The VMID of the container
-            script (str): The bash script content
-            script_path (str): The path where to save the script in the container
-            
-        Returns:
-            dict: Response containing script output and exit status
-        """
-        try:
-            # First try the exec API
-            # First write the script to a file in the container
-            if not self.write_file_to_lxc(node, vmid, script_path, script):
-                raise Exception(f"Failed to write script to {script_path}")
-            
-            # Make the script executable
-            self.execute_in_lxc(node, vmid, f"chmod +x {script_path}")
-            
-            # Execute the script and return the result
-            result = self.execute_in_lxc(node, vmid, script_path)
-            logger.info(f"Executed script in container {vmid}")
-            return result
-        except Exception as e:
-            if "501 Server Error: Method" in str(e) and "not implemented" in str(e):
-                # First try the SSH fallback method if exec API is not available
-                logger.info(f"LXC exec API not supported. Falling back to SSH method for container {vmid}.")
-                try:
-                    result = self.ssh_execute_script_in_lxc(node, vmid, script)
-                    if result:
-                        logger.info(f"Successfully executed script via SSH in container {vmid}")
-                        return {
-                            'data': 'Script executed successfully via SSH',
-                            'success': True
-                        }
-                    else:
-                        # If SSH fails, try the GitHub gist method
-                        logger.info(f"SSH method failed. Trying GitHub gist method for container {vmid}.")
-                        if self.github_deploy_script(node, vmid, script):
-                            logger.info(f"Successfully executed script via GitHub gist in container {vmid}")
-                            return {
-                                'data': 'Script executed successfully via GitHub gist',
-                                'success': True
-                            }
-                        else:
-                            logger.warning(f"GitHub gist method also failed for container {vmid}")
-                            # Return a simulated success to allow deployment to continue
-                            return {
-                                'data': 'Script execution simulated (all methods failed)',
-                                'success': True
-                            }
-                except Exception as ssh_error:
-                    # If SSH fallback fails, try GitHub gist method
-                    logger.warning(f"SSH fallback failed for container {vmid}: {str(ssh_error)}")
-                    logger.info(f"Trying GitHub gist method for container {vmid}.")
-                    if self.github_deploy_script(node, vmid, script):
-                        logger.info(f"Successfully executed script via GitHub gist in container {vmid}")
-                        return {
-                            'data': 'Script executed successfully via GitHub gist',
-                            'success': True
-                        }
-                    else:
-                        # If GitHub gist method also fails, simulate success to allow deployment to continue
-                        logger.warning(f"GitHub gist method also failed for container {vmid}")
-                        return {
-                            'data': 'Script execution simulated (all methods failed)',
-                            'success': True
-                        }
-            else:
-                logger.warning(f"Failed to execute script in container {vmid}: {str(e)}")
-                # For simulation mode, we'll return a success response to allow deployment to continue
-                return {
-                    'data': f'Script execution failed: {str(e)}',
-                    'success': True
-                }
+        return self.get(endpoint)
     
-    def get_lxc_ip(self, node, vmid):
-        """Get the IP address of an LXC container.
-        
-        Args:
-            node (str): The node name where the container is running
-            vmid (int): The VMID of the container
-            
-        Returns:
-            str: The IP address of the container or None if not found
-        """
-        try:
-            # Get container config to see if it has a static IP
-            container = self.get(f"nodes/{node}/lxc/{vmid}/config")
-            
-            # Parse network interfaces
-            for key, value in container.items():
-                if key.startswith('net') and 'ip=' in value:
-                    # Extract the IP from net[n]=name=eth0,bridge=vmbr0,ip=10.10.10.10/24,...
-                    ip_part = [part for part in value.split(',') if part.startswith('ip=')]
-                    if ip_part:
-                        ip = ip_part[0].split('=')[1]
-                        # Remove CIDR notation if present
-                        if '/' in ip:
-                            ip = ip.split('/')[0]
-                        # Return only if it's not 'dhcp'
-                        if ip.lower() != 'dhcp':
-                            return ip
-            
-            # If no static IP, get the dynamic IP from status
-            status = self.get(f"nodes/{node}/lxc/{vmid}/status/current")
-            if 'net' in status and isinstance(status['net'], list):
-                for interface in status['net']:
-                    if 'ip' in interface and interface['ip'] != '127.0.0.1':
-                        return interface['ip']
-            
-            # If we get here, no IP was found
-            logger.warning(f"No IP address found for container {vmid} on node {node}")
+    def get_resource_usage(self):
+        """Get detailed resource usage information across the cluster"""
+        nodes_data = self.get_nodes()
+        if not nodes_data:
             return None
-        except Exception as e:
-            logger.error(f"Failed to get IP for container {vmid}: {str(e)}")
-            return None
+            
+        result = []
+        for node in nodes_data:
+            node_name = node['node']
+            status = self.get_node_status(node_name)
+            
+            if status:
+                result.append({
+                    'name': node_name,
+                    'status': node['status'],
+                    'cpu': {
+                        'cores': status.get('cpuinfo', {}).get('cores', 0),
+                        'usage': status.get('cpu', 0)
+                    },
+                    'memory': {
+                        'total': status.get('memory', {}).get('total', 0),
+                        'used': status.get('memory', {}).get('used', 0),
+                        'free': status.get('memory', {}).get('free', 0)
+                    },
+                    'disk': {
+                        'total': status.get('rootfs', {}).get('total', 0),
+                        'used': status.get('rootfs', {}).get('used', 0),
+                        'free': status.get('rootfs', {}).get('free', 0)
+                    },
+                    'uptime': status.get('uptime', 0)
+                })
+                
+        return result
     
-    def ssh_execute_script_in_lxc(self, node, vmid, script):
-        """Upload and execute a script on an LXC container via SSH.
+    def check_ha_config(self):
+        """
+        Check if HA (High Availability) is correctly configured
         
-        This is a fallback method for containers where the exec API is not available.
-        It requires SSH access to the container.
+        Returns:
+            dict: HA configuration status
+        """
+        return self.get("cluster/ha/status")
+    
+    def check_cluster_config(self):
+        """
+        Check if cluster is correctly configured
+        
+        Returns:
+            dict: Cluster configuration status
+        """
+        return self.get("cluster/config")
+        
+    def check_ceph_config(self):
+        """
+        Check if Ceph is configured
+        
+        Returns:
+            dict: Ceph configuration status
+        """
+        return self.get("cluster/ceph")
+    
+    def check_storage_replication(self):
+        """
+        Check if storage replication is configured
+        
+        Returns:
+            list: Storage replication configuration
+        """
+        return self.get("cluster/replication")
+    
+    def setup_ha_group(self, group_name, nodes=None):
+        """
+        Create a HA group if it doesn't exist
         
         Args:
-            node (str): The node name where the container is running
-            vmid (int): The VMID of the container
-            script (str): The bash script content
+            group_name (str): Name of the HA group
+            nodes (list, optional): List of node names to include in the group
             
         Returns:
-            bool: True if successful, False otherwise
+            dict: API response
         """
-        # Get container IP
-        ip = self.get_lxc_ip(node, vmid)
-        if not ip:
-            logger.error(f"Cannot execute SSH, no IP found for container {vmid}")
-            return False
+        # Check if group already exists
+        ha_groups = self.get("cluster/ha/groups")
+        if ha_groups and any(group.get('group') == group_name for group in ha_groups):
+            return {"status": "exists", "message": f"HA group {group_name} already exists"}
         
-        # For Proxmox passwordless SSH to container would typically work with root
-        ssh_user = 'root'
+        # Create group with provided nodes or all online nodes
+        if not nodes:
+            all_nodes = self.get_nodes()
+            nodes = [node['node'] for node in all_nodes if node['status'] == 'online']
         
-        # Create a temporary script file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.sh') as temp_file:
-            temp_file_path = temp_file.name
-            temp_file.write(script)
+        data = {
+            "group": group_name,
+            "nodes": ",".join(nodes)
+        }
         
-        try:
-            # Create SSH client
-            ssh_client = paramiko.SSHClient()
-            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        return self.post("cluster/ha/groups", data=data)
+    
+    def setup_ha_resources(self, vm_id, group=None):
+        """
+        Add a VM to HA resources
+        
+        Args:
+            vm_id (int): VM ID to add to HA
+            group (str, optional): HA group name
             
-            # Try to connect with the same credentials as Proxmox 
-            # (assuming root@pam or similar credentials may work for SSH)
-            credentials = []
+        Returns:
+            dict: API response
+        """
+        # Check if resource already exists
+        ha_resources = self.get("cluster/ha/resources")
+        if ha_resources and any(res.get('sid') == f"vm:{vm_id}" for res in ha_resources):
+            return {"status": "exists", "message": f"VM {vm_id} already in HA resources"}
+        
+        data = {
+            "sid": f"vm:{vm_id}",
+            "max_restart": 3,
+            "max_relocate": 3,
+            "state": "started"
+        }
+        
+        if group:
+            data["group"] = group
             
-            # First try: Attempt connection with the same password used for Proxmox
-            if '@' in self.user:
-                ssh_user = self.user.split('@')[0]  # Usually 'root'
-            credentials.append((ssh_user, self.password))
+        return self.post("cluster/ha/resources", data=data)
+    
+    def enable_vm_ha(self, node, vm_id, group=None):
+        """
+        Enable HA for a specific VM
+        
+        Args:
+            node (str): Node name where VM is located
+            vm_id (int): VM ID
+            group (str, optional): HA group name
             
-            # Second try: Using 'root' with the same password
-            if ssh_user != 'root':
-                credentials.append(('root', self.password))
+        Returns:
+            dict: API response
+        """
+        return self.setup_ha_resources(vm_id, group)
+    
+    def setup_cluster_options(self, migration_type="secure"):
+        """
+        Configure cluster-wide options
+        
+        Args:
+            migration_type (str): Migration type (secure, insecure, websocket)
             
-            # Third try: Container may have default credentials
-            credentials.append(('root', 'root'))
+        Returns:
+            dict: API response
+        """
+        data = {
+            "migration": migration_type
+        }
+        
+        return self.post("cluster/options", data=data)
+    
+    def setup_storage_replication(self, storage_id, nodes=None):
+        """
+        Setup storage replication between nodes
+        
+        Args:
+            storage_id (str): Storage ID to replicate
+            nodes (list, optional): List of node names for replication
             
-            # Try different credential combinations
-            connected = False
-            for username, password in credentials:
-                try:
-                    logger.debug(f"Attempting SSH connection to {ip} with user '{username}'")
-                    ssh_client.connect(ip, username=username, password=password, timeout=10)
-                    connected = True
-                    logger.info(f"SSH connection established to container {vmid} at {ip} with user '{username}'")
-                    break
-                except Exception as conn_error:
-                    logger.debug(f"SSH connection attempt failed: {str(conn_error)}")
+        Returns:
+            dict: API response
+        """
+        if not nodes:
+            all_nodes = self.get_nodes()
+            nodes = [node['node'] for node in all_nodes if node['status'] == 'online']
+        
+        # This is a placeholder - actual storage replication setup
+        # would depend on the storage type and Proxmox version
+        return {"status": "not_implemented", "message": "Storage replication setup not implemented"}
+    
+    def check_proxmox_config_status(self):
+        """
+        Check overall Proxmox configuration status
+        
+        Returns:
+            dict: Configuration status for different components
+        """
+        return {
+            "cluster": self.check_cluster_config() is not None,
+            "ha": self.check_ha_config() is not None,
+            "ceph": self.check_ceph_config() is not None,
+            "replication": self.check_storage_replication() is not None
+        }
+    
+    def auto_configure_proxmox(self, configure_ha=True, configure_migration=True, ha_group_name="lb-ha-group"):
+        """
+        Automatically configure Proxmox for better load balancing
+        
+        Args:
+            configure_ha (bool): Whether to configure HA
+            configure_migration (bool): Whether to configure migration settings
+            ha_group_name (str): Name for the HA group
             
-            if not connected:
-                logger.error(f"Failed to establish SSH connection to container {vmid} at {ip} with any credentials")
-                return False
-            
-            # Upload the script
+        Returns:
+            dict: Configuration results
+        """
+        results = {
+            "ha_configured": False,
+            "migration_configured": False,
+            "errors": []
+        }
+        
+        # Configure migration settings
+        if configure_migration:
             try:
-                sftp = ssh_client.open_sftp()
-                remote_path = '/tmp/setup_script.sh'
-                sftp.put(temp_file_path, remote_path)
-                sftp.chmod(remote_path, 0o755)  # Make executable
-                sftp.close()
-            except Exception as sftp_error:
-                logger.error(f"Failed to upload script via SFTP: {str(sftp_error)}")
-                ssh_client.close()
-                return False
-            
-            # Execute the script
-            stdin, stdout, stderr = ssh_client.exec_command(f"bash {remote_path}")
-            exit_status = stdout.channel.recv_exit_status()
-            
-            # Log output for debugging
-            stdout_str = stdout.read().decode('utf-8')
-            stderr_str = stderr.read().decode('utf-8')
-            
-            if exit_status != 0:
-                logger.error(f"Script execution failed with exit code {exit_status}")
-                logger.error(f"STDOUT: {stdout_str}")
-                logger.error(f"STDERR: {stderr_str}")
-                ssh_client.close()
-                return False
-            
-            logger.info(f"Script executed successfully on container {vmid}")
-            logger.debug(f"Script output: {stdout_str}")
-            
-            # Clean up and close connection
-            ssh_client.exec_command(f"rm {remote_path}")
-            ssh_client.close()
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"SSH execution failed: {str(e)}")
-            return False
-            
-        finally:
-            # Clean up the temporary file
+                migration_result = self.setup_cluster_options(migration_type="secure")
+                results["migration_configured"] = migration_result is not None
+            except Exception as e:
+                results["errors"].append(f"Migration configuration failed: {str(e)}")
+        
+        # Configure HA
+        if configure_ha:
             try:
-                os.unlink(temp_file_path)
-            except Exception:
-                pass
+                # Create HA group with all online nodes
+                ha_group_result = self.setup_ha_group(ha_group_name)
+                results["ha_configured"] = ha_group_result is not None
+                
+                # Optional: could automatically add important VMs to HA here
+                # This would require additional logic to identify important VMs
+                
+            except Exception as e:
+                results["errors"].append(f"HA configuration failed: {str(e)}")
+        
+        return results
